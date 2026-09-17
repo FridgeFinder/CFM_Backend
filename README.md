@@ -46,6 +46,16 @@ Fridge Finder is project sponsored by [Collective Focus](https://collectivefocus
 
 ---
 
+## Deployment
+
+```bash
+cd CommunityFridgeMapApi
+sam build --use-container
+sam deploy --config-file samconfig.toml
+```
+
+---
+
 ## Setup Local Database Connection
 
 **Guide that was used:** https://betterprogramming.pub/how-to-deploy-a-local-serverless-application-with-aws-sam-b7b314c3048c

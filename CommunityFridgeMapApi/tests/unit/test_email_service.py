@@ -7,6 +7,9 @@ import json
 
 
 class SESClientMock:
+    def __init__(self):
+        self.send_count = 0
+
     def send_email(
         self,
         Source,
@@ -15,6 +18,7 @@ class SESClientMock:
         ReplyToAddresses=None,
         **kwargs,
     ):
+        self.send_count += 1
         return {"MessageId": 1}
 
 
@@ -53,11 +57,36 @@ class ContactHandlerTest(unittest.TestCase):
             subject,
             sender,
             senderEmailAddress,
+            website,
         ) = ContactHandler.extract_body_fields(body)
         self.assertEqual(message, "message")
         self.assertEqual(sender, "name")
         self.assertEqual(subject, "FridgeFinder Contact: subject. From: name")
         self.assertEqual(senderEmailAddress, "email")
+        self.assertIsNone(website)
+
+    def test_lambda_handler_blocks_honeypot_submission(self):
+        body = json.dumps(
+            {
+                "name": "name",
+                "email": "email",
+                "subject": "subject",
+                "message": "message",
+                "website": "https://spam.example",
+            }
+        )
+        client = SESClientMock()
+
+        with self.assertLogs(level="WARNING") as logs:
+            response = ContactHandler.lambda_handler(
+                event={"body": body}, client=client
+            )
+
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(client.send_count, 0)
+        self.assertTrue(
+            any("website honeypot" in message for message in logs.output)
+        )
 
     def test_lambda_handler(self):
         body = json.dumps(
@@ -69,7 +98,9 @@ class ContactHandlerTest(unittest.TestCase):
             }
         )
         event = {"body": body}
-        response = ContactHandler.lambda_handler(event=event, client=SESClientMock())
+        client = SESClientMock()
+        response = ContactHandler.lambda_handler(event=event, client=client)
         self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(client.send_count, 1)
         message = json.loads(response["body"])["message"]
-        self.assertEqual(message, "Succesffully Sent Email!")
+        self.assertEqual(message, "Successfully Sent Email!")

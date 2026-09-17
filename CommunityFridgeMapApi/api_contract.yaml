@@ -520,3 +520,9 @@ components:
           minLength: 1
           maxLength: 2048
           example: We are looking to write a piece about this website.
+
+        website:
+          description: Honeypot field that must be left empty by legitimate clients.
+          type: string
+          nullable: true
+          example: null

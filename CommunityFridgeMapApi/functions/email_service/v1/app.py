@@ -72,7 +72,7 @@ class SendEmail:
             messageId = response.get("MessageId", "Not Found")
             logger.info(f"Email sent! Message ID: {messageId}")
             return api_response(
-                200, json.dumps({"message": "Succesffully Sent Email!"})
+                200, json.dumps({"message": "Successfully Sent Email!"})
             )
 
 
@@ -84,9 +84,10 @@ class ContactHandler:
         subject = body.get("subject", "No Subject")
         subject = f"FridgeFinder Contact: {subject}."
         message = body.get("message", None)
+        website = body.get("website", None)
         if subject and sender:
             subject = f"{subject} From: {sender}"
-        return message, subject, sender, senderEmailAddress
+        return message, subject, sender, senderEmailAddress, website
 
     @staticmethod
     def lambda_handler(event: dict, client=boto3.client("ses", "us-east-1")) -> dict:
@@ -103,6 +104,7 @@ class ContactHandler:
             subject,
             senderName,
             senderEmailAddress,
+            website,
         ) = ContactHandler.extract_body_fields(body)
         if not senderName or not senderEmailAddress or not message:
             return api_response(
@@ -110,6 +112,11 @@ class ContactHandler:
                 json.dumps(
                     {"message": "Unable to send Email. Missing Required Fields"}
                 ),
+            )
+        if website:
+            logger.warning("Bot contact attempt blocked by website honeypot")
+            return api_response(
+                200, json.dumps({"message": "Successfully Sent Email!"})
             )
         response = SendEmail(client).sendEmail(
             SENDER,

@@ -12,6 +12,7 @@ Globals:
       - image/webp
   Function:
     Timeout: 60
+    MemorySize: 512
 
 Parameters:
   Environment:
