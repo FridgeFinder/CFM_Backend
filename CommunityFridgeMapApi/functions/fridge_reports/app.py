@@ -41,9 +41,16 @@ class FridgReportHandler:
                 db_client=ddbclient, fridge_report=body
             ).add_item()
         elif httpMethod == "GET":
-            db_response = Fridge(db_client=ddbclient).get_latest_report(
-                fridgeId=fridge_id
-            )
+            if event.get("resource", "").endswith("/reports/history"):
+                query_parameters = event.get("queryStringParameters") or {}
+                db_response = FridgeReport(db_client=ddbclient).get_report_history(
+                    fridge_id=fridge_id,
+                    next_token=query_parameters.get("nextToken"),
+                )
+            else:
+                db_response = Fridge(db_client=ddbclient).get_latest_report(
+                    fridgeId=fridge_id
+                )
         else:
             FridgeReport(db_client=ddbclient).warm_lambda()
             db_response = DB_Response(False, 400, "httpMethod missing")

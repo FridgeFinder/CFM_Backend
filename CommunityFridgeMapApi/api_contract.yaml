@@ -192,6 +192,51 @@ paths:
         "500":
           description: Unexpected error prevented server from fulfilling request.
 
+  /v1/fridges/{id}/reports/history:
+    parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: "^[a-z0-9]{2,}$"
+        required: true
+        description: ID of the Fridge object (fridgeId).
+        example: greenpointfridge
+
+    get:
+      summary: Read a page of report history for the specified fridge.
+      tags:
+        - report
+      parameters:
+        - in: query
+          name: nextToken
+          schema:
+            type: string
+          required: false
+          description: Cursor returned by the previous page.
+      responses:
+        "200":
+          description: A page of up to five reports and an optional continuation cursor.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - reports
+                  - nextToken
+                properties:
+                  reports:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Report"
+                  nextToken:
+                    type: string
+                    nullable: true
+        "400":
+          description: Invalid Fridge ID or pagination cursor.
+        "500":
+          description: Unexpected error prevented server from fulfilling request.
+
     post:
       summary: Create a new Report object.
       tags:
