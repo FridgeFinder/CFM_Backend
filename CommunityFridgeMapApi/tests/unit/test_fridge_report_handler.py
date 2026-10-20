@@ -40,6 +40,39 @@ class DynamoDbMockPutItem:
         }
 
 
+class DynamoDbMockDeleteReport:
+    def __init__(self, latest_report, remaining_reports=None, report_exists=True):
+        self.fridge_json = json.dumps(
+            {"id": "thefriendlyfridge", "latestFridgeReport": latest_report}
+        )
+        self.remaining_reports = remaining_reports or []
+        self.report_exists = report_exists
+        self.delete_parameters = None
+        self.query_parameters = None
+        self.update_parameters = None
+
+    def get_item(self, TableName=None, Key=None):
+        return {"Item": {"json_data": {"S": self.fridge_json}}}
+
+    def delete_item(self, **kwargs):
+        self.delete_parameters = kwargs
+        if self.report_exists:
+            return {"Attributes": {"json_data": {"S": "{}"}}}
+        return {}
+
+    def query(self, **kwargs):
+        self.query_parameters = kwargs
+        return {
+            "Items": [
+                {"json_data": {"S": json.dumps(report)}}
+                for report in self.remaining_reports
+            ]
+        }
+
+    def update_item(self, **kwargs):
+        self.update_parameters = kwargs
+
+
 class FrdgeReportHandlerTest(unittest.TestCase):
     def test_lambda_handler_success(self):
         event = {
@@ -54,6 +87,115 @@ class FrdgeReportHandlerTest(unittest.TestCase):
         body = json.loads(response["body"])
         self.assertEqual(body["fridgeId"], "thefriendlyfridge")
         self.assertTrue("timestamp" in body)
+
+    def test_delete_newest_report_updates_fridge_to_previous_report(self):
+        previous_report = {"fridgeId": "thefriendlyfridge", "epochTimestamp": "199"}
+        ddb_client = DynamoDbMockDeleteReport(
+            latest_report={"fridgeId": "thefriendlyfridge", "epochTimestamp": "200"},
+            remaining_reports=[previous_report],
+        )
+        event = {
+            "pathParameters": {
+                "fridgeId": "thefriendlyfridge",
+                "epochTimestamp": "200",
+            },
+            "httpMethod": "DELETE",
+        }
+
+        response = FridgReportHandler.lambda_handler(event, ddb_client)
+
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(
+            ddb_client.delete_parameters["Key"],
+            {
+                "fridgeId": {"S": "thefriendlyfridge"},
+                "epochTimestamp": {"N": "200"},
+            },
+        )
+        self.assertEqual(ddb_client.query_parameters["Limit"], 1)
+        self.assertFalse(ddb_client.query_parameters["ScanIndexForward"])
+        self.assertEqual(
+            json.loads(
+                ddb_client.update_parameters["ExpressionAttributeValues"][":fr"]["S"]
+            ),
+            previous_report,
+        )
+
+    def test_delete_non_newest_report_does_not_update_fridge(self):
+        ddb_client = DynamoDbMockDeleteReport(
+            latest_report={"fridgeId": "thefriendlyfridge", "epochTimestamp": "200"}
+        )
+        event = {
+            "pathParameters": {
+                "fridgeId": "thefriendlyfridge",
+                "epochTimestamp": "199",
+            },
+            "httpMethod": "DELETE",
+        }
+
+        response = FridgReportHandler.lambda_handler(event, ddb_client)
+
+        self.assertEqual(response["statusCode"], 200)
+        self.assertIsNone(ddb_client.query_parameters)
+        self.assertIsNone(ddb_client.update_parameters)
+
+    def test_delete_last_report_clears_latest_fridge_report(self):
+        ddb_client = DynamoDbMockDeleteReport(
+            latest_report={"fridgeId": "thefriendlyfridge", "epochTimestamp": "200"}
+        )
+        event = {
+            "pathParameters": {
+                "fridgeId": "thefriendlyfridge",
+                "epochTimestamp": "200",
+            },
+            "httpMethod": "DELETE",
+        }
+
+        response = FridgReportHandler.lambda_handler(event, ddb_client)
+
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(
+            ddb_client.update_parameters["UpdateExpression"], "SET #JD = :fj REMOVE #LFR"
+        )
+        updated_fridge = json.loads(
+            ddb_client.update_parameters["ExpressionAttributeValues"][":fj"]["S"]
+        )
+        self.assertNotIn("latestFridgeReport", updated_fridge)
+
+    def test_delete_report_returns_not_found_when_report_does_not_exist(self):
+        ddb_client = DynamoDbMockDeleteReport(
+            latest_report={"fridgeId": "thefriendlyfridge", "epochTimestamp": "200"},
+            report_exists=False,
+        )
+        event = {
+            "pathParameters": {
+                "fridgeId": "thefriendlyfridge",
+                "epochTimestamp": "199",
+            },
+            "httpMethod": "DELETE",
+        }
+
+        response = FridgReportHandler.lambda_handler(event, ddb_client)
+
+        self.assertEqual(response["statusCode"], 404)
+        self.assertIsNone(ddb_client.query_parameters)
+
+    def test_delete_report_rejects_invalid_epoch_timestamp(self):
+        ddb_client = DynamoDbMockDeleteReport(
+            latest_report={"fridgeId": "thefriendlyfridge", "epochTimestamp": "200"}
+        )
+        event = {
+            "pathParameters": {
+                "fridgeId": "thefriendlyfridge",
+                "epochTimestamp": "not-a-timestamp",
+            },
+            "httpMethod": "DELETE",
+        }
+
+        response = FridgReportHandler.lambda_handler(event, ddb_client)
+
+        self.assertEqual(response["statusCode"], 400)
+        self.assertIsNone(ddb_client.delete_parameters)
 
     def test_get_fridge_report_history_returns_page_and_cursor(self):
         event = {

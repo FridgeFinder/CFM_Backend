@@ -30,7 +30,8 @@ class FridgReportHandler:
         to the event httpMethod
         """
         body = event.get("body", None)
-        fridge_id = event.get("pathParameters", {}).get("fridgeId", None)
+        path_parameters = event.get("pathParameters") or {}
+        fridge_id = path_parameters.get("fridgeId")
         if body is not None:
             body = json.loads(body)
             body["fridgeId"] = fridge_id
@@ -40,6 +41,11 @@ class FridgReportHandler:
             db_response = FridgeReport(
                 db_client=ddbclient, fridge_report=body
             ).add_item()
+        elif httpMethod == "DELETE":
+            db_response = FridgeReport(db_client=ddbclient).delete_report(
+                fridge_id=fridge_id,
+                epoch_timestamp=path_parameters.get("epochTimestamp"),
+            )
         elif httpMethod == "GET":
             if event.get("resource", "").endswith("/reports/history"):
                 query_parameters = event.get("queryStringParameters") or {}

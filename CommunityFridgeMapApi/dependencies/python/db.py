@@ -512,34 +512,42 @@ class Fridge(DB_Item):
     def get_fridge_locations(self):
         pass
 
-    def update_fridge_report(self, fridgeId: str, fridge_report: dict) -> DB_Response:
+    def update_fridge_report(self, fridgeId: str, fridge_report: dict = None) -> DB_Response:
         """
-        Updates latestFridgeReport field with new Fridge Report.
-        This function is called when a new FridgeReport is added to the database
+        Updates or clears the latestFridgeReport field on a fridge.
         """
-        db_reponse = self.get_item(fridgeId=fridgeId)
-        if not db_reponse.is_successful():
+        db_response = self.get_item(fridgeId=fridgeId)
+        if not db_response.is_successful():
             # Fridge was not found
-            return db_reponse
-        fridge_dict = json.loads(db_reponse.json_data)
-        fridge_dict["latestFridgeReport"] = fridge_report
+            return db_response
+        fridge_dict = json.loads(db_response.json_data)
+        if fridge_report is None:
+            fridge_dict.pop("latestFridgeReport", None)
+        else:
+            fridge_dict["latestFridgeReport"] = fridge_report
         fridge_json_data = json.dumps(fridge_dict)
-        latestFridgeReport = json.dumps(fridge_report)
-        """
-        JD and #LFR are mapped to the values set in ExpressionAttributeNames
-        :fj and :fr are mapped to the values set in ExpressionAttributeValues
-        UpdateExpression becomes: "json_data":  {"S": fridge_json_data}, "latestFridgeReport": {"S": latestFridgeReport}
-        """
-        self.db_client.update_item(
-            TableName=self.TABLE_NAME,
-            Key={"id": {"S": fridgeId}},
-            ExpressionAttributeNames={"#LFR": "latestFridgeReport", "#JD": "json_data"},
-            ExpressionAttributeValues={
-                ":fr": {"S": latestFridgeReport},
-                ":fj": {"S": fridge_json_data},
-            },
-            UpdateExpression="SET #JD = :fj, #LFR = :fr",
-        )
+        expression_attribute_names = {"#LFR": "latestFridgeReport", "#JD": "json_data"}
+        expression_attribute_values = {":fj": {"S": fridge_json_data}}
+        if fridge_report is None:
+            update_expression = "SET #JD = :fj REMOVE #LFR"
+        else:
+            expression_attribute_values[":fr"] = {"S": json.dumps(fridge_report)}
+            update_expression = "SET #JD = :fj, #LFR = :fr"
+        try:
+            self.db_client.update_item(
+                TableName=self.TABLE_NAME,
+                Key={"id": {"S": fridgeId}},
+                ExpressionAttributeNames=expression_attribute_names,
+                ExpressionAttributeValues=expression_attribute_values,
+                UpdateExpression=update_expression,
+            )
+        except ClientError as e:
+            logger.error(e)
+            return DB_Response(
+                success=False,
+                status_code=500,
+                message="Unexpected AWS service exception",
+            )
         return DB_Response(
             success=True, status_code=201, message="fridge_report was succesfully added"
         )
@@ -688,6 +696,107 @@ class FridgeReport(DB_Item):
             status_code=200,
             message="Successfully found fridge report history",
             json_data=json.dumps(response),
+        )
+
+    def delete_report(self, fridge_id, epoch_timestamp):
+        """Delete a report and refresh the fridge's cached latest report if needed.
+
+        If the deleted report was the newest, use the next newest report or clear
+        latestFridgeReport when no reports remain.
+        """
+        if not isinstance(fridge_id, str) or not fridge_id:
+            return DB_Response(
+                success=False, status_code=400, message="Missing required field: fridgeId"
+            )
+        if not isinstance(epoch_timestamp, str) or not re.fullmatch(
+            r"[0-9]+", epoch_timestamp
+        ):
+            return DB_Response(
+                success=False,
+                status_code=400,
+                message="Invalid epochTimestamp",
+            )
+        epoch_timestamp = epoch_timestamp.lstrip("0") or "0"
+        if len(epoch_timestamp) > 38:
+            return DB_Response(
+                success=False,
+                status_code=400,
+                message="Invalid epochTimestamp",
+            )
+
+        try:
+            fridge_response = Fridge(db_client=self.db_client).get_item(
+                fridgeId=fridge_id
+            )
+        except ClientError as e:
+            logger.error(e)
+            return DB_Response(
+                success=False,
+                status_code=500,
+                message="Unexpected AWS service exception",
+            )
+        if not fridge_response.is_successful():
+            return fridge_response
+
+        try:
+            delete_response = self.db_client.delete_item(
+                TableName=self.TABLE_NAME,
+                Key={
+                    "fridgeId": {"S": fridge_id},
+                    "epochTimestamp": {"N": epoch_timestamp},
+                },
+                ReturnValues="ALL_OLD",
+            )
+        except ClientError as e:
+            logger.error(e)
+            return DB_Response(
+                success=False,
+                status_code=500,
+                message="Unexpected AWS service exception",
+            )
+        if "Attributes" not in delete_response:
+            return DB_Response(
+                success=False,
+                status_code=404,
+                message="Fridge report was not found",
+            )
+
+        fridge_dict = json.loads(fridge_response.json_data)
+        latest_report = fridge_dict.get("latestFridgeReport")
+        if (
+            isinstance(latest_report, dict)
+            and str(latest_report.get("epochTimestamp")) == epoch_timestamp
+        ):
+            try:
+                query_response = self.db_client.query(
+                    TableName=self.TABLE_NAME,
+                    KeyConditionExpression="fridgeId = :fridgeId",
+                    ExpressionAttributeValues={":fridgeId": {"S": fridge_id}},
+                    ScanIndexForward=False,
+                    Limit=1,
+                    ConsistentRead=True,
+                )
+            except ClientError as e:
+                logger.error(e)
+                return DB_Response(
+                    success=False,
+                    status_code=500,
+                    message="Unexpected AWS service exception",
+                )
+            reports = query_response.get("Items", [])
+            next_latest_report = (
+                json.loads(reports[0]["json_data"]["S"]) if reports else None
+            )
+            fridge_update_response = Fridge(db_client=self.db_client).update_fridge_report(
+                fridgeId=fridge_id, fridge_report=next_latest_report
+            )
+            if not fridge_update_response.is_successful():
+                return fridge_update_response
+
+        return DB_Response(
+            success=True,
+            status_code=200,
+            message="Fridge report was successfully deleted",
         )
 
     def set_timestamp(self):

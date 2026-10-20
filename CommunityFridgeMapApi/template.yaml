@@ -89,6 +89,7 @@ Resources:
             Action:
             - dynamodb:PutItem
             - dynamodb:Query
+            - dynamodb:DeleteItem
             Resource: !GetAtt FridgeReportTable.Arn
           - Effect: Allow
             Action:
@@ -116,6 +117,20 @@ Resources:
               Ref: ApiGatewayApi
             RequestParameters:
               - method.request.path.fridgeId:
+                  Required: true
+                  Caching: false
+        DeleteFridgeReport:
+          Type: Api
+          Properties:
+            Path: /v1/fridges/{fridgeId}/reports/{epochTimestamp}
+            Method: delete
+            RestApiId:
+              Ref: ApiGatewayApi
+            RequestParameters:
+              - method.request.path.fridgeId:
+                  Required: true
+                  Caching: false
+              - method.request.path.epochTimestamp:
                   Required: true
                   Caching: false
         GetFridgeReportHistory:
