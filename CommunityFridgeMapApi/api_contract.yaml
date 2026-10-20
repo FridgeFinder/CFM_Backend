@@ -237,6 +237,38 @@ paths:
         "500":
           description: Unexpected error prevented server from fulfilling request.
 
+  /v1/fridges/{id}/reports/{epochTimestamp}:
+    parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: "^[a-z0-9]{2,}$"
+        required: true
+        description: ID of the Fridge object (fridgeId).
+        example: greenpointfridge
+      - in: path
+        name: epochTimestamp
+        schema:
+          type: integer
+          minimum: 0
+        required: true
+        description: Epoch timestamp identifying the report.
+
+    delete:
+      summary: Delete a Report object.
+      tags:
+        - report
+      responses:
+        "200":
+          description: Report object was deleted successfully.
+        "400":
+          description: Invalid fridge ID or epoch timestamp.
+        "404":
+          description: Fridge or report not found.
+        "500":
+          description: Unexpected error prevented server from fulfilling the request.
+
     post:
       summary: Create a new Report object.
       tags:
