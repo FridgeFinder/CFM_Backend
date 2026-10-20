@@ -39,7 +39,6 @@ class DynamoDbMockPutItem:
             },
         }
 
-
 class DynamoDbMockDeleteReport:
     def __init__(self, latest_report, remaining_reports=None, report_exists=True):
         self.fridge_json = json.dumps(
@@ -71,7 +70,6 @@ class DynamoDbMockDeleteReport:
 
     def update_item(self, **kwargs):
         self.update_parameters = kwargs
-
 
 class FrdgeReportHandlerTest(unittest.TestCase):
     def test_lambda_handler_success(self):
