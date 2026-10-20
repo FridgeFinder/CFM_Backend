@@ -88,6 +88,7 @@ Resources:
           - Effect: Allow
             Action:
             - dynamodb:PutItem
+            - dynamodb:Query
             Resource: !GetAtt FridgeReportTable.Arn
           - Effect: Allow
             Action:
@@ -110,6 +111,17 @@ Resources:
           Type: Api
           Properties:
             Path: /v1/fridges/{fridgeId}/reports
+            Method: get
+            RestApiId:
+              Ref: ApiGatewayApi
+            RequestParameters:
+              - method.request.path.fridgeId:
+                  Required: true
+                  Caching: false
+        GetFridgeReportHistory:
+          Type: Api
+          Properties:
+            Path: /v1/fridges/{fridgeId}/reports/history
             Method: get
             RestApiId:
               Ref: ApiGatewayApi
@@ -302,7 +314,6 @@ Resources:
             - logs:CreateLogStream
             - logs:PutLogEvents
             Resource: arn:aws:logs:*:*:*
-          Statement:
           - Effect: Allow
             Action:
             - s3:PutObject

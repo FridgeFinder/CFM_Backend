@@ -1,5 +1,6 @@
 import os
 import boto3
+import base64
 import time
 import re
 import json
@@ -409,7 +410,7 @@ class Fridge(DB_Item):
                 message="Successfully Found Fridge",
                 json_data=json.dumps(response),
             )
-    
+
     def get_latest_fridge_reports(self):
         response = self.db_client.scan(TableName=self.TABLE_NAME)
         all_reports = []
@@ -632,6 +633,62 @@ class FridgeReport(DB_Item):
             self.epochTimestamp: str = fridge_report.get(
                 "epochTimestamp", None
             )  # Epoch timestamp for querying
+
+    def get_report_history(self, fridge_id, next_token=None):
+        exclusive_start_key = None
+        if next_token:
+            try:
+                decoded_token = base64.urlsafe_b64decode(
+                    next_token.encode("utf-8") + b"=" * (-len(next_token) % 4)
+                )
+                exclusive_start_key = json.loads(decoded_token)
+                if (
+                    not isinstance(exclusive_start_key, dict)
+                    or exclusive_start_key.get("fridgeId", {}).get("S") != fridge_id
+                    or "N" not in exclusive_start_key.get("epochTimestamp", {})
+                ):
+                    raise ValueError("Cursor does not match fridgeId")
+            except (ValueError, TypeError, UnicodeDecodeError, AttributeError):
+                return DB_Response(
+                    success=False,
+                    status_code=400,
+                    message="Invalid nextToken",
+                )
+
+        query_parameters = {
+            "TableName": self.TABLE_NAME,
+            "KeyConditionExpression": "fridgeId = :fridgeId",
+            "ExpressionAttributeValues": {":fridgeId": {"S": fridge_id}},
+            "ScanIndexForward": False,
+            "Limit": 5,
+        }
+        if exclusive_start_key:
+            query_parameters["ExclusiveStartKey"] = exclusive_start_key
+
+        result = self.db_client.query(**query_parameters)
+        reports = [
+            json.loads(item["json_data"]["S"])
+            for item in result.get("Items", [])
+        ]
+        last_evaluated_key = result.get("LastEvaluatedKey")
+        response = {
+            "reports": reports,
+            "nextToken": (
+                base64.urlsafe_b64encode(
+                    json.dumps(last_evaluated_key).encode("utf-8")
+                )
+                .decode("utf-8")
+                .rstrip("=")
+                if last_evaluated_key
+                else None
+            ),
+        }
+        return DB_Response(
+            success=True,
+            status_code=200,
+            message="Successfully found fridge report history",
+            json_data=json.dumps(response),
+        )
 
     def set_timestamp(self):
         """
