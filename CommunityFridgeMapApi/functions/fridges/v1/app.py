@@ -37,6 +37,29 @@ class FridgeHandler:
             if body is not None:
                 body = json.loads(body)
                 db_response = Fridge(db_client=ddbclient, fridge=body).add_item()
+        elif httpMethod == "PATCH":
+            if not fridgeId:
+                db_response = DB_Response(False, 400, "Invalid Fridge ID")
+            elif body is None:
+                db_response = DB_Response(
+                    False, 400, "Request body is required"
+                )
+            else:
+                try:
+                    patch = json.loads(body)
+                except json.JSONDecodeError:
+                    db_response = DB_Response(
+                        False, 400, "Request body must be valid JSON"
+                    )
+                else:
+                    if not isinstance(patch, dict):
+                        db_response = DB_Response(
+                            False, 400, "Request body must be a JSON object"
+                        )
+                    else:
+                        db_response = Fridge(db_client=ddbclient).patch_item(
+                            fridgeId=fridgeId, patch=patch
+                        )
         else:
             Fridge(db_client=ddbclient).warm_lambda()
             db_response = DB_Response(False, 400, "httpMethod missing")

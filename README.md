@@ -43,6 +43,7 @@ Fridge Finder is project sponsored by [Collective Focus](https://collectivefocus
    - **You DO NOT need to create an aws account to use SAM CLI for this project, skip these steps if you don't want to create an aws account**
 3. Python 3 - [Install Python 3](https://www.python.org/downloads/)
 4. Docker - [Install Docker](https://docs.docker.com/get-docker/)
+5. Make - included with many macOS/Linux development toolchains; run `make help` to check availability.
 
 ---
 
@@ -72,12 +73,12 @@ Follow these steps to get Dynamodb running locally
    ```sh
    $ ./scripts/create_local_dynamodb_tables.py
    ```
-3. `cd CommunityFridgeMapApi/`
-4. `sam build --use-container`
+3. Stay in the repository root for the following `make` commands.
+4. Build the application: `make build`
 5. **Load data into your local Dynamodb tables**
-   1. Fridge Data: `sam local invoke LoadFridgeDataFunction --parameter-overrides ParameterKey=Environment,ParameterValue=local ParameterKey=Stage,ParameterValue=dev --docker-network cfm-network`
+   1. Fridge Data: `make load-fridges`
 6. **Get data from your local Dynamodb tables**
-   1. `aws dynamodb scan --table-name fridge_dev --endpoint-url http://localhost:4566`
+   1. `make scan-fridges`
 
 ---
 
@@ -100,17 +101,43 @@ Confirm that the following requests work for you
 Choose your favorite API platform for using APIs.
 Recommend: https://www.postman.com/
 
+### Make shortcuts
+
+Run these commands from the repository root (no `cd CommunityFridgeMapApi` needed). Start the local database and create its tables as described above, then run `make build` before invoking functions or starting the API. Rebuild after changing application code.
+
+| Command | Action |
+| --- | --- |
+| `make help` | List available shortcuts |
+| `make build` | Build the SAM application using containers |
+| `make start-api` | Start the local API server; keep this terminal open |
+| `make post-fridge` | POST a fridge using the supplied event |
+| `make get-fridges` | GET all fridges using the supplied event |
+| `make get-fridges-by-tag` | GET fridges using the tag in the supplied event |
+| `make patch-fridge` | PATCH a fridge using the supplied event |
+| `make post-report` | POST a fridge report using the supplied event |
+| `make post-contact` | POST the contact form using the supplied event |
+| `make get-fridge FRIDGE_ID=thefriendlyfridge` | GET one fridge from the running API server |
+| `make get-reports FRIDGE_ID=thefriendlyfridge` | GET fridge reports from the running API server |
+| `make get-report-history FRIDGE_ID=thefriendlyfridge` | GET the first report-history page from the running API server |
+| `make load-fridges` | Load sample fridge data into the local database |
+| `make scan-fridges` | Scan the local fridge table |
+| `make scan-reports` | Scan the local fridge-report table |
+
+POST/PATCH and list-GET invocation shortcuts use the existing JSON files in [events](CommunityFridgeMapApi/events). Edit the event body, fridge ID, or tag before invoking. You can also supply a custom event, for example `make patch-fridge EVENT=events/my-patch.json`; event paths are relative to `CommunityFridgeMapApi`.
+
+Defaults are `ENVIRONMENT=local`, `STAGE=dev`, `DOCKER_NETWORK=cfm-network`, `API_URL=http://localhost:3000`, and `DYNAMODB_URL=http://localhost:4566`. Override them when needed, for example `make start-api STAGE=test` or `make get-fridge FRIDGE_ID=thefriendlyfridge API_URL=http://localhost:3001`. From inside `CommunityFridgeMapApi`, use `make -C .. <target>`.
+
 ### Fridge
 
 ### One Time Use
 
-1. POST Fridge: `sam local invoke FridgesFunction --event events/local-post-fridge-event.json --parameter-overrides ParameterKey=Environment,ParameterValue=local ParameterKey=Stage,ParameterValue=dev --docker-network cfm-network`
-2. GET Fridges: `sam local invoke FridgesFunction --event events/local-event-get-fridges.json --parameter-overrides ParameterKey=Environment,ParameterValue=local ParameterKey=Stage,ParameterValue=dev --docker-network cfm-network`
-3. GET Fridges Filter By Tag: `sam local invoke FridgesFunction --event events/local-event-get-fridges-with-tag.json --parameter-overrides ParameterKey=Environment,ParameterValue=local ParameterKey=Stage,ParameterValue=dev --docker-network cfm-network`
+1. POST Fridge: `make post-fridge`
+2. GET Fridges: `make get-fridges`
+3. GET Fridges Filter By Tag: `make get-fridges-by-tag`
 
 ### Local Server
 
-1. Start Server: `sam local start-api --parameter-overrides ParameterKey=Environment,ParameterValue=local ParameterKey=Stage,ParameterValue=dev --docker-network cfm-network`
+1. Start Server: `make start-api`
 2. GET Fridges: Go to http://localhost:3000/v1/fridges
 3. GET Fridge: Go to http://localhost:3000/v1/fridges/{fridgeId}
 4. Get Fridges Filter By Tag: http://localhost:3000/v1/fridges?tag={TAG}
@@ -147,20 +174,50 @@ curl --location --request POST 'http://localhost:3000/v1/fridges' --header 'Cont
 
 #### One Time Use
 
-1. POST FridgeReport: `sam local invoke FridgeReportFunction --event events/local-fridge-report-event.json --parameter-overrides ParameterKey=Environment,ParameterValue=local ParameterKey=Stage,ParameterValue=dev --docker-network cfm-network`
+1. POST FridgeReport: `make post-report`
    - [OPTIONAL] Generate custom event Example: `sam local generate-event apigateway aws-proxy --method POST --path document --body "{\"condition\": \"working\", \"foodPercentage\": 0}" > events/local-fridge-report-event-2.json`
      - Add `"fridgeId": "{FRIDGEID}"` to pathParameter in generated file
-2. Query Data: `aws dynamodb scan --table-name fridge_report_dev --endpoint-url http://localhost:4566`
+2. Query Data: `make scan-reports`
 
 #### Local Server
 
-1. Start Server: `sam local start-api --parameter-overrides ParameterKey=Environment,ParameterValue=local ParameterKey=Stage,ParameterValue=dev --docker-network cfm-network`
+1. Start Server: `make start-api`
 2. Make a POST Request to: `http://127.0.0.1:3000/v1/fridges/{fridgeId}/reports`
    - Example: `curl --location --request POST 'http://127.0.0.1:3000/v1/fridges/thefriendlyfridge/reports' --header 'Content-Type: application/json' --data-raw '{"condition": "good", "foodPercentage": 1}'`
 
+### PATCH Fridge
+
+Update an existing fridge using `PATCH /v1/fridges/{fridgeId}`. Use the ID returned when creating the fridge, and send a JSON object containing only the fields you want to change: `name`, `location`, `maintainer`, `notes`, and `photoUrl`.
+
+
+- `location` and `maintainer` objects replace the entire existing object; they are not merged. Include all values you want to retain. A replacement `location` must include `geoLat` and `geoLng`.
+- Set `maintainer`, `notes`, or `photoUrl` to `null` to clear them. `name` and `location` cannot be null, and `name` cannot be empty.
+- A successful request returns `200` with the updated fridge, including its updated `last_edited` timestamp. Invalid requests return `400`; a missing fridge returns `404`.
+
+#### One Time Use
+
+1. Edit the supplied [PATCH event](CommunityFridgeMapApi/events/local-patch-fridge-event.json), replacing `thefriendlyfridge` in `path` and `pathParameters.fridgeId` with an existing fridge ID and adjusting `body` to the fields you want to change.
+2. Invoke the function: `make patch-fridge`
+
+#### Local Server
+
+1. Start Server: `make start-api`
+2. Make a PATCH request to `http://127.0.0.1:3000/v1/fridges/{fridgeId}`:
+
+   ```bash
+   curl --location --request PATCH \
+     'http://127.0.0.1:3000/v1/fridges/thefriendlyfridge' \
+     --header 'Content-Type: application/json' \
+     --data-raw '{
+       "name": "The Friendly Fridge",
+       "notes": "Please leave the area clean.",
+       "photoUrl": "https://example.com/fridge.webp"
+     }'
+   ```
+
 ### Image
 
-1. Start local SAM API `sam local start-api --parameter-overrides ParameterKey=Environment,ParameterValue=local ParameterKey=Stage,ParameterValue=dev --docker-network cfm-network`
+1. Start local SAM API: `make start-api`
 1. Upload image (replace `<file-path>` with your actual image path like `"@/home/user/Downloads/sample.webp"`)
    ```
    curl --request POST \

@@ -64,6 +64,11 @@ class FridgeTest(unittest.TestCase):
         self.assertIsNotNone(fridge.id)
         self.assertEqual(len(fridge.id), fridge.HASH_ID_LENGTH)
 
+    def test_set_id_removes_ampersand(self):
+        fridge = Fridge(fridge={"name": "Food & Friends"}, db_client=None)
+        fridge.set_id()
+        self.assertEqual(fridge.id, "foodfriends")
+
     def test_set_last_edditted(self):
         fridge = Fridge(fridge={"name": "The Friendly Fridge"}, db_client=None)
         self.assertIsNone(fridge.last_edited)
