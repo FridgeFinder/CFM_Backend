@@ -269,6 +269,45 @@ paths:
         "500":
           description: Unexpected error prevented server from fulfilling the request.
 
+    patch:
+      summary: Partially update a Fridge object.
+      tags:
+        - fridge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                name:
+                  $ref: "#/components/schemas/Fridge/properties/name"
+                location:
+                  $ref: "#/components/schemas/Location"
+                maintainer:
+                  allOf:
+                    - $ref: "#/components/schemas/Maintainer"
+                  nullable: true
+                notes:
+                  $ref: "#/components/schemas/Fridge/properties/notes"
+                photoUrl:
+                  $ref: "#/components/schemas/Fridge/properties/photoUrl"
+      responses:
+        "200":
+          description: The updated Fridge object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Fridge"
+        "400":
+          description: Invalid Fridge ID, request body, or Fridge fields.
+        "404":
+          description: Fridge object not found.
+        "500":
+          description: Unexpected error prevented server from fulfilling the request.
+
     post:
       summary: Create a new Report object.
       tags:

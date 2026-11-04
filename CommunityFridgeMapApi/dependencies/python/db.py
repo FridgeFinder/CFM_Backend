@@ -509,6 +509,128 @@ class Fridge(DB_Item):
             message = f"Unable to generate unique fridge ID after {retries} retries"
         )
 
+    def patch_item(self, fridgeId: str, patch: dict) -> DB_Response:
+        editable_fields = {"name", "location", "maintainer", "notes", "photoUrl"}
+        unsupported_fields = set(patch) - editable_fields
+        if unsupported_fields:
+            return DB_Response(
+                success=False,
+                status_code=400,
+                message=f"Unsupported field(s): {', '.join(sorted(unsupported_fields))}",
+            )
+        if not patch:
+            return DB_Response(
+                success=False, status_code=400, message="At least one field is required"
+            )
+
+        for field in ("name", "notes", "photoUrl"):
+            if field in patch and patch[field] is not None and not isinstance(
+                patch[field], str
+            ):
+                return DB_Response(
+                    success=False,
+                    status_code=400,
+                    message=f"{field} must be a string or null",
+                )
+        for field in ("location", "maintainer"):
+            if field in patch and patch[field] is not None and not isinstance(
+                patch[field], dict
+            ):
+                return DB_Response(
+                    success=False,
+                    status_code=400,
+                    message=f"{field} must be an object or null",
+                )
+        if "name" in patch and patch["name"] is None:
+            return DB_Response(
+                success=False, status_code=400, message="name cannot be null"
+            )
+        if "location" in patch and patch["location"] is None:
+            return DB_Response(
+                success=False, status_code=400, message="location cannot be null"
+            )
+
+        normalized_patch = DB_Item.process_fields(patch)
+        if "name" in patch and normalized_patch.get("name") is None:
+            return DB_Response(
+                success=False, status_code=400, message="name cannot be empty"
+            )
+
+        current_response = self.get_item(fridgeId)
+        if not current_response.is_successful():
+            return current_response
+
+        fridge_data = json.loads(current_response.json_data)
+        fridge_data.update(normalized_patch)
+        for field in patch:
+            if normalized_patch[field] is None:
+                fridge_data.pop(field, None)
+        fridge_data["id"] = fridgeId
+
+        updated_fridge = Fridge(db_client=self.db_client, fridge=fridge_data)
+        validation = updated_fridge.validate_fields()
+        if not validation.is_valid:
+            return DB_Response(
+                success=False, status_code=400, message=validation.message
+            )
+
+        updated_fridge.set_last_edited()
+        fridge_data["last_edited"] = updated_fridge.last_edited
+        formatted_item = updated_fridge.format_dynamodb_item_v2()
+        expression_attribute_names = {"#json_data": "json_data", "#id": "id"}
+        expression_attribute_values = {
+            ":json_data": {"S": json.dumps(fridge_data)}
+        }
+        update_parts = ["#json_data = :json_data"]
+        remove_parts = []
+
+        for index, field in enumerate(sorted(patch)):
+            name_token = f"#field{index}"
+            value_token = f":field{index}"
+            expression_attribute_names[name_token] = field
+            if fridge_data.get(field) is None:
+                remove_parts.append(name_token)
+            else:
+                update_parts.append(f"{name_token} = {value_token}")
+                expression_attribute_values[value_token] = formatted_item[field]
+
+        expression_attribute_names["#last_edited"] = "last_edited"
+        expression_attribute_values[":last_edited"] = {
+            "N": updated_fridge.last_edited
+        }
+        update_parts.append("#last_edited = :last_edited")
+        update_expression = "SET " + ", ".join(update_parts)
+        if remove_parts:
+            update_expression += " REMOVE " + ", ".join(remove_parts)
+
+        try:
+            self.db_client.update_item(
+                TableName=self.TABLE_NAME,
+                Key={"id": {"S": fridgeId}},
+                ExpressionAttributeNames=expression_attribute_names,
+                ExpressionAttributeValues=expression_attribute_values,
+                UpdateExpression=update_expression,
+                ConditionExpression="attribute_exists(#id)",
+            )
+        except self.db_client.exceptions.ConditionalCheckFailedException:
+            return DB_Response(
+                success=False, status_code=404, message="Fridge was not found"
+            )
+        except ClientError as e:
+            logger.error(e)
+            return DB_Response(
+                success=False,
+                status_code=500,
+                message="Unexpected AWS service exception",
+            )
+
+        return DB_Response(
+            success=True,
+            status_code=200,
+            message="Fridge was successfully updated",
+            json_data=json.dumps(fridge_data),
+        )
+
     def get_fridge_locations(self):
         pass
 

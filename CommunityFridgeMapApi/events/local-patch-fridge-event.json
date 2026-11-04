@@ -1,0 +1,14 @@
+{
+  "body": "{\"name\": \"The Friendly Fridge\", \"notes\": \"Please leave the area clean!!!\", \"photoUrl\": \"https://example.com/fridge.webp\"}",
+  "resource": "/v1/fridges/{fridgeId}",
+  "path": "/v1/fridges/thefriendlyfridge",
+  "httpMethod": "PATCH",
+  "isBase64Encoded": false,
+  "pathParameters": {
+    "fridgeId": "thefriendlyfridge"
+  },
+  "queryStringParameters": {},
+  "headers": {
+    "Content-Type": "application/json"
+  }
+}
